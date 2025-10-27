@@ -45,7 +45,17 @@ NOTES:
         WHEN OTHERS THEN NULL;
     END;   
 
+    BEGIN
+        EXECUTE IMMEDIATE 'TRUNCATE TABLE temp_soa';
+    EXCEPTION
+        WHEN OTHERS THEN NULL;
+    END;   
 
+    BEGIN
+        EXECUTE IMMEDIATE 'TRUNCATE TABLE temp_or';
+    EXCEPTION
+        WHEN OTHERS THEN NULL;
+    END;   
 
 
     --- Insert List of Accounts ---
@@ -97,6 +107,52 @@ COMMIT;
         sobplancode;
 
 COMMIT;
+
+
+--- Insert SOA --- added by francis 10272025
+INSERT INTO temp_soa (membercode,soano,soadate,endorsementno)
+SELECT 
+    membercode, 
+    LISTAGG(soano, ', ') WITHIN GROUP (ORDER BY soano),
+    LISTAGG(TO_CHAR(soadate, 'MM/DD/YYYY'), ', ') WITHIN GROUP (ORDER BY soadate),
+    LISTAGG(endorsementno, ', ') WITHIN GROUP (ORDER BY endorsementno)
+FROM tblsoapremiummembers a
+OUTER APPLY (
+    SELECT soadate, endorsementno 
+    FROM tblsoaaccounts b 
+    WHERE a.soacode = b.soacode
+) b
+WHERE 1=1 
+AND membercode IN (
+            SELECT DISTINCT membercode 
+            FROM temp_listofaccounts
+        )
+GROUP BY membercode;
+
+COMMIT;
+
+
+--- Insert OR --- added by francis 10272025
+INSERT INTO temp_or (membercode,orno,ordate,datepaid)
+SELECT 
+membercode, 
+LISTAGG(orno, ', ') WITHIN GROUP (ORDER BY orno) as orno,
+LISTAGG(TO_CHAR(ordate, 'MM/DD/YYYY'), ', ') WITHIN GROUP (ORDER BY ordate) as ordate,
+LISTAGG(TO_CHAR(datepaid, 'MM/DD/YYYY'), ', ') WITHIN GROUP (ORDER BY datepaid) as datepaid
+FROM tblpaymentbreakdowndetails a 
+OUTER APPLY (SELECT orno, ordate FROM tblpaymentremittance b  WHERE a.paycode = b.paycode) b
+OUTER APPLY (SELECT datepaid FROM tblpaymentbreakdown c  WHERE a.paymentbreakdowndetno = c.detno) c
+WHERE 1=1 
+AND membercode IN (
+           SELECT DISTINCT membercode 
+           FROM temp_listofaccounts
+       )
+GROUP BY membercode;
+
+COMMIT;
+
+
+
 
       -- Loop through each sobplancode and attempt to drop the corresponding column
     FOR column_drp IN (
@@ -415,6 +471,48 @@ UPDATE SET
 
 COMMIT;
 
+
+---update SOA details--- added by francis 10272025
+MERGE INTO temp_listofaccountenrollees a
+USING (
+    SELECT DISTINCT 
+        membercode, 
+        soano, 
+        soadate, 
+        endorsementno 
+    FROM temp_soa
+) b
+ON (a.membercode = b.membercode)
+WHEN MATCHED THEN
+UPDATE SET
+    a.invoiceno = NVL(b.soano, ''),
+    a.invoicedate = NVL(b.soadate, ''),
+    a.endorsementno = NVL(b.endorsementno, '');
+
+COMMIT;
+
+
+---update OR details--- added by francis 10272025
+MERGE INTO temp_listofaccountenrollees a
+USING (
+    SELECT DISTINCT 
+        membercode, 
+        orno, 
+        ordate, 
+        datepaid 
+    FROM temp_or
+) b
+ON (a.membercode = b.membercode)
+WHEN MATCHED THEN
+UPDATE SET
+    a.orno = NVL(b.orno, ''),
+    a.ordate = NVL(b.ordate, ''),
+    a.datepaid = NVL(b.datepaid, '');
+
+COMMIT;
+
+
+
 --- Update Columns ---
 FOR column_rec IN (
         SELECT DISTINCT LOWER(TRIM(sobplancode)) AS sobplancode 
@@ -473,7 +571,11 @@ FOR column_rec IN (
     membershipfee, modalmembershipfee, billingfrequency, microinsurancecoordinator, 
     provincialoffice, UNIT, CENTER, clienttype, clientclass, modeofpayment, remittancedate, 
     loanreleasedate, CARDINSTITUTION, orno, datepaid, commissionamount, returnstublink, 
-    emailaddress, placeofbirth, NATIONALITY, uploadedby, benefit_type, BENEFIT_VALUE,mem_dateencoded
+    emailaddress, placeofbirth, NATIONALITY, uploadedby, benefit_type, BENEFIT_VALUE,mem_dateencoded,
+    endorsementno,
+    invoiceno,
+    invoicedate,
+    ordate
      )
       SELECT 
     UPPER(agreementno), UPPER(clientname), agreementeffectivedate, UPPER(productchannel), UPPER(productcode),
@@ -484,7 +586,11 @@ FOR column_rec IN (
     membershipfee, modalmembershipfee, UPPER(billingfrequency), UPPER(microinsurancecoordinator), 
     UPPER(provincialoffice), UPPER(UNIT), UPPER(CENTER), UPPER(clienttype), UPPER(clientclass), UPPER(modeofpayment), remittancedate, 
     loanreleasedate, UPPER(cardinstituded), orno, datepaid, commissionamount, UPPER(returnstublink), 
-    UPPER(emailaddress),UPPER(placeofbirth),UPPER(NATIONALITY),UPPER(uploadedby),UPPER(column_name) AS benefit_type,value,mem_dateencoded
+    UPPER(emailaddress),UPPER(placeofbirth),UPPER(NATIONALITY),UPPER(uploadedby),UPPER(column_name) AS benefit_type,value,mem_dateencoded,
+    endorsementno,
+    invoiceno,
+    invoicedate,
+    ordate
 FROM temp_listofaccountenrollees
 UNPIVOT (
     value FOR column_name IN (
