@@ -14,6 +14,7 @@ Ver          Date                  Author             Description
 1.0        06/13/2025              Francis          1. create sp_list_of_enrollees
 1.1        06/17/2025              Francis          1. add list of enrollees
 1.2        08/04/2025              Francis          1. Added max det no to avoid duplication of membercode
+1.3        10/27/2025              Francis          1. Added soa and or details
 
 
 NOTES:
